@@ -13,7 +13,7 @@ A matching Greenbook record does **not** prove a physical package is genuine. Ne
 npm install
 npx wrangler login
 npm run dev          # http://127.0.0.1:8787
-npx vitest run       # 54 tests, no AI quota needed (needs wrangler login: the AI binding is remote)
+npx vitest run       # 58 tests, no AI quota needed (needs wrangler login: the AI binding is remote)
 npm run typecheck    # checks src and test
 npm run deploy       # not yet deployed
 ```
@@ -27,6 +27,8 @@ Set in `wrangler.jsonc` under `vars`. There are no secrets.
 | Name | Purpose | Default |
 |---|---|---|
 | `AI` (binding) | Workers AI | n/a |
+| `EXTRACT_LIMITER` (binding) | Rate limit for `/api/extract` | 20 per minute per IP |
+| `LOOKUP_LIMITER` (binding) | Rate limit for `/api/lookup` | 60 per minute per IP |
 | `GEMMA_MODEL` | Model ID | `@cf/google/gemma-4-26b-a4b-it` |
 | `MAX_IMAGE_BYTES` | Upload limit | `5242880` (5 MB) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS allowlist | `http://localhost:3000,http://localhost:5173` |
@@ -34,6 +36,15 @@ Set in `wrangler.jsonc` under `vars`. There are no secrets.
 | `ENABLE_DEV_ROUTES` | Enables `/api/dev/*` test routes | `false` |
 
 To use the test routes locally, create `.dev.vars` containing `ENABLE_DEV_ROUTES=true` (it is git-ignored).
+
+## Public API
+
+Used by the app in `../web`.
+
+- `POST /api/extract`: multipart form with an `image` field. Returns `{ "ok": true, "data": ExtractedProduct }`.
+- `GET /api/lookup?nafdac=<number>`: returns a `ReferenceLookupResult`.
+
+Errors carry a safe `code` and `message`; full details go to the Worker logs. Requests over the limit get HTTP 429 with `Retry-After`. Limits are approximate and per Cloudflare location. They use the client IP because shoppers are anonymous, and mobile networks can share an IP, so watch for 429s and raise the limits if real users hit them. Before deploying, add the site's origin to `ALLOWED_ORIGINS`.
 
 ## Using the modules
 
@@ -194,4 +205,4 @@ Invalid input:
 
 ## Tests
 
-`npx vitest run` runs 54 tests covering fixture and mocked-live lookup (exact match, near-matches, not found, unavailable source, timeout, bad JSON, expiry), extraction parsing and error handling (timeout, rate limit, malformed or cut-off output, oversized and non-image files), CORS and routing. Live-photo checks (clear, blurry, no NAFDAC number, non-medicine, oversized, non-image) were run manually through `/api/dev/extract`.
+`npx vitest run` runs 58 tests covering fixture and mocked-live lookup (exact match, near-matches, not found, unavailable source, timeout, bad JSON, expiry), extraction parsing and error handling (timeout, rate limit, malformed or cut-off output, oversized and non-image files), CORS and routing. Live-photo checks (clear, blurry, no NAFDAC number, non-medicine, oversized, non-image) were run manually through `/api/dev/extract`.

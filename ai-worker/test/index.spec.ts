@@ -42,6 +42,49 @@ describe("worker routes", () => {
 	});
 });
 
+describe("public routes", () => {
+	it("look up a number without dev routes enabled", async () => {
+		const res = await call("/api/lookup?nafdac=A6-100103");
+		expect(res.status).toBe(200);
+		const body: any = await res.json();
+		expect(body.status).toBe("match");
+		expect(body.source.isLiveOfficialResult).toBe(false);
+	});
+
+	it("refuse a declared oversized upload before reading it", async () => {
+		const big = { ...env, MAX_IMAGE_BYTES: "10" } as unknown as Env;
+		const res = await call(
+			"/api/extract",
+			{ method: "POST", body: "x".repeat(70_000), headers: { "content-length": "70000" } },
+			big,
+		);
+		expect(res.status).toBe(413);
+	});
+
+	it("do not expose raw model errors", async () => {
+		const failing = {
+			...env,
+			GEMMA_MODEL: "m",
+			AI: { run: () => Promise.reject(new Error("secret internal detail")) },
+		} as unknown as Env;
+		const form = new FormData();
+		form.append("image", new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], "a.jpg", { type: "image/jpeg" }));
+		const res = await call("/api/extract", { method: "POST", body: form }, failing);
+		expect(res.status).toBe(502);
+		expect(await res.text()).not.toContain("secret internal detail");
+	});
+
+	it("answer 429 with Retry-After when the limiter refuses", async () => {
+		const limited = {
+			...env,
+			LOOKUP_LIMITER: { limit: () => Promise.resolve({ success: false }) },
+		} as unknown as Env;
+		const res = await call("/api/lookup?nafdac=A6-100103", undefined, limited);
+		expect(res.status).toBe(429);
+		expect(res.headers.get("retry-after")).toBe("60");
+	});
+});
+
 describe("developer test routes", () => {
 	it("are hidden when ENABLE_DEV_ROUTES is not set", async () => {
 		const res = await call("/api/dev/lookup?nafdac=A6-100103");
